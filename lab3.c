@@ -183,9 +183,12 @@ uint8_t main()
 #endif
 
 uint8_t i; //for loop variable
-uint16_t count = 0; //display count
-uint8_t pinA = 1, pinB = 1, oldPinA = 1, oldPinB = 1; //hold pin values fo the encoder
-uint8_t encoder_data = 0xFF;
+uint16_t display_count = 0; //display count
+
+//encoder variables
+uint8_t pinA = 1, pinB = 1, oldPinA = 1, oldPinB = 1; //hold pin values for the encoder
+uint8_t encoder_data = 0xFF; //data being read from the encoder pins
+int8_t encoder_count = 0; //counter to track the encoder state machine
 
 //set port B bits 4-7 as outputs
 //DDRB |= 1<<PB4 | 1<<PB5 | 1<<PB6 | 1<<PB7;
@@ -197,7 +200,8 @@ PORTE |= 1<<PE6;
 spi_init();
 DDRD |= 1<<PD2;
 
-uint8_t bar_graph = 10;
+uint8_t bar_graph = 0;
+int8_t bar_count = 0;
 enum encoder_state encoder = IDLE; //init encoder state
 
 while(1){
@@ -221,7 +225,7 @@ while(1){
   for (i = 0; i < BUTTONS; i++){
   	if (chk_buttons(i))
   	{
-		count += 1<<i; //shifting is equivalent to 2^(# of shifts)
+		display_count += 1<<i; //shifting is equivalent to 2^(# of shifts)
 
   	}
 
@@ -241,15 +245,25 @@ while(1){
 			bar_graph = 0x01;
 
 		#endif
+		//check if encoder has gone through all states of the state machine
+		if (encoder_count == 3){
+			bar_count++;
+		}
+		else if (encoder_count == -3){
+			bar_count--;
+		}
+		encoder_count = 0;
 		if ((pinA != oldPinA) || (pinB != oldPinB)){ //if movement detected
 			if ((pinA == 0) && (pinB == 1)){ //CW movement
 				if (oldPinA == 1){
 					encoder = STATE01;
+					encoder_count++;
 				}
 			}
 			else if ((pinA == 1) && (pinB == 0)){ //CCW movement
 				if (oldPinB == 1){
 					encoder = STATE10;
+					encoder_count--;
 				}
 			}
 		}
@@ -263,6 +277,7 @@ while(1){
 		if ((pinA == 0) && (pinB == 0)){ //CW movement
 			if (oldPinB == 1){
 				encoder = DETENT;
+				encoder_count++;
 			}
 		}
 		else if ((pinA == 1) && (pinB == 1)){ //CCW movement
@@ -280,11 +295,13 @@ while(1){
 		if ((pinA == 1) && (pinB == 0)){ //CW movement
 			if (oldPinA == 0){
 				encoder = STATE10;
+				encoder_count++;
 			}
 		}
 		else if ((pinA == 0) && (pinB == 1)){ //CCW movement
 			if (oldPinB == 0){
 				encoder = STATE01;
+				encoder_count--;
 			}
 	  	}
 		break;
@@ -302,6 +319,7 @@ while(1){
 		else if ((pinA == 0) && (pinB == 0)){ //CCW movement
 			if (oldPinA == 1){
 				encoder = DETENT;
+				encoder_count--;
 			}
 		}
 		break;
@@ -310,16 +328,16 @@ while(1){
   oldPinA = pinA;
   oldPinB = pinB;
   #ifdef DEBUG_ENCODER
-	  spi_write(bar_graph);
+	  spi_write(bar_count);
 
   #endif
 
   //bound the count to 0 - 1023
-  if (count < 0){count = 0;}
-  else if (count > 1023){count = 0;} 
+  if (display_count < 0){display_count = 0;}
+  else if (display_count > 1023){display_count = 0;} 
 
   //break up the disp_value to 4, BCD digits in the array: call (segsum)
-  segsum(count);
+  segsum(display_count);
 
   //make PORTA an output
   DDRA = 0xFF;
