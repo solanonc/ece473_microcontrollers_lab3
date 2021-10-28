@@ -3,6 +3,7 @@
 // 10.27.21
 
 //#define DEBUG
+#define DEBUG_ENCODER
 
 #define TRUE 1
 #define FALSE 0
@@ -79,12 +80,14 @@ void spi_write(uint8_t data){
 
 int8_t chk_encoders(uint8_t encoder){
 
-	static uint16_t state = {0};
-	uint8_t pinA, pinB;
+	static uint16_t state = {0}; //tracks state of the encoder
+	uint8_t pinA, pinB; //encoder pins
 
+	//check for assertion (active low)
 	pinA = ((encoder & 1) == 0) ? 0 : 1; 
 	pinB = ((encoder & 2) == 0) ? 0 : 1; 
 
+	//update encoder state
 	state = (state << 1) | pinA | 0xE000;
 
 	if (state == 0xF000){return (pinB ? 1 : 0);}
@@ -175,23 +178,27 @@ uint8_t main()
   PORTE |= 1<<PE6;
   spi_init();
   DDRD |= 1<<PD2;
-  uint8_t bar_graph = 10;
+  uint8_t bar_graph = 0;
 
 #endif
 
 uint8_t i; //for loop variable
 uint16_t count = 0; //display count
+uint8_t pinA = 1, pinB = 1, oldPinA = 1, oldPinB = 1; //hold pin values fo the encoder
+uint8_t encoder_data = 0xFF;
 
 //set port B bits 4-7 as outputs
-DDRB |= 1<<PB4 | 1<<PB5 | 1<<PB6 | 1<<PB7;
-PORTB = 0x00; //init Port B
+//DDRB |= 1<<PB4 | 1<<PB5 | 1<<PB6 | 1<<PB7;
+//PORTB = 0x00; //init Port B
 
 // bar graph and encoder init
-/*DDRE |= 1<<PE6;
+DDRE |= 1<<PE6;
 PORTE |= 1<<PE6;
 spi_init();
 DDRD |= 1<<PD2;
-uint8_t bar_graph = 10;*/
+
+uint8_t bar_graph = 10;
+enum encoder_state encoder = IDLE; //init encoder state
 
 while(1){
 //encoder test code
@@ -223,6 +230,90 @@ while(1){
  //disable tristate buffer for pushbutton switches
   PORTB &= ~(1<<PB4); //decoder outputs logic high and disables tri state buffer
 
+  encoder_data = spi_read(); //read encoder pins from spi
+  pinA = ((encoder_data & 0x01) == 0) ? 0 : 1; //sample pinA
+  pinB = ((encoder_data & 0x02) == 0) ? 0 : 1; //sample pinB
+
+  //encoder state machine
+  switch (encoder){
+	  case IDLE:
+		#ifdef DEBUG_ENCODER
+			bar_graph = 0x01;
+
+		#endif
+		if ((pinA != oldPinA) || (pinB != oldPinB)){ //if movement detected
+			if ((pinA == 0) && (pinB == 1)){ //CW movement
+				if (oldPinA == 1){
+					encoder = STATE01;
+				}
+			}
+			else if ((pinA == 1) && (pinB == 0)){ //CCW movement
+				if (oldPinB == 1){
+					encoder = STATE10;
+				}
+			}
+		}
+		break;
+
+	  case STATE01:
+		#ifdef DEBUG_ENCODER
+			bar_graph = 0x02;
+
+		#endif
+		if ((pinA == 0) && (pinB == 0)){ //CW movement
+			if (oldPinB == 1){
+				encoder = DETENT;
+			}
+		}
+		else if ((pinA == 1) && (pinB == 1)){ //CCW movement
+			if (oldPinA == 0){
+				encoder = IDLE;
+			}
+		}
+		break;
+
+	  case DETENT:
+		#ifdef DEBUG_ENCODER
+			bar_graph = 0x03;
+
+		#endif
+		if ((pinA == 1) && (pinB == 0)){ //CW movement
+			if (oldPinA == 0){
+				encoder = STATE10;
+			}
+		}
+		else if ((pinA == 0) && (pinB == 1)){ //CCW movement
+			if (oldPinB == 0){
+				encoder = STATE01;
+			}
+	  	}
+		break;
+
+	  case STATE10:
+		#ifdef DEBUG_ENCODER
+			bar_graph = 0x04;
+
+		#endif
+		if ((pinA == 1) && (pinB == 1)){ //CW movement
+			if (oldPinB == 0){
+				encoder = IDLE;
+			}
+		}
+		else if ((pinA == 0) && (pinB == 0)){ //CCW movement
+			if (oldPinA == 1){
+				encoder = DETENT;
+			}
+		}
+		break;
+
+  }
+  oldPinA = pinA;
+  oldPinB = pinB;
+  #ifdef DEBUG_ENCODER
+	  spi_write(bar_graph);
+
+  #endif
+
   //bound the count to 0 - 1023
   if (count < 0){count = 0;}
   else if (count > 1023){count = 0;} 
@@ -234,14 +325,14 @@ while(1){
   DDRA = 0xFF;
 
   //bound a counter (0-4) to keep track of digit to display 
-  PORTB = 0x00; //first digit
+  //PORTB = 0x00; //first digit
   for (i = 0; i < SEGNUMS+1; i++)
   {
 	PORTA = segment_data[i]; //send 7 segment code to LED segments
 	_delay_ms(1);
 
 	//send PORTB the next digit to display
-	PORTB += 0x10;
+	//PORTB += 0x10;
 
   }
      
