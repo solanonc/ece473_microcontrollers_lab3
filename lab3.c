@@ -2,7 +2,7 @@
 // Cruz M. Solano-Nieblas
 // 10.27.21
 
-#define DEBUG
+//#define DEBUG
 
 #define TRUE 1
 #define FALSE 0
@@ -37,6 +37,41 @@ void spi_init(void){
  }//spi_init
 
 //******************************************************************************
+//				spi_read
+//          Reads data from MISO pin connected to the encoders 				
+//
+
+uint8_t spi_read(void){
+
+	PORTE &= ~(1<<PE6); // parallel load encoder pins
+	_delay_us(100); //need a delay for buffer to change states and PORTA to read the buttons
+	PORTE |= 1<<PE6; // disable parallel load to enable serial shifting
+	_delay_us(100); //need a delay for buffer to change states and PORTA to read the buttons
+
+	SPDR = 0x00; // dummy transmission to start receive
+	while (bit_is_clear(SPSR, SPIF)){} // spin until transmission is complete
+
+	return SPDR;
+
+
+ }//spi_read
+
+//******************************************************************************
+//				spi_write
+//          Writes data to MOSI pin connected to the bar graph 				
+//
+
+void spi_write(uint8_t data){
+	
+	SPDR = data;
+	while (bit_is_clear(SPSR, SPIF)){} // spin until transmission is complete
+	PORTD |= 1<<PD2;
+	PORTD &= ~(1<<PD2);
+	
+}//spi_write
+
+
+//******************************************************************************
 //			      chk_encoders
 //Check the state of the encoder.
 //Adapted from Ganssel's "Guide to Debouncing"            
@@ -47,22 +82,13 @@ int8_t chk_encoders(uint8_t encoder){
 	static uint16_t state = {0};
 	uint8_t pinA, pinB;
 
-//	PORTE &= ~(1<<PE6); // parallel load encoder pins
-//	PORTE |= 1<<PE6; // disable parallel load to enable serial shifting
-
-//	SPDR = 0x00; // dummy transmission to start receive
-//
 	pinA = ((encoder & 1) == 0) ? 0 : 1; 
 	pinB = ((encoder & 2) == 0) ? 0 : 1; 
 
 	state = (state << 1) | pinA | 0xE000;
 
-	if (state == 0xF000)
-		
-		return pinB ? 1 : 0;
-	else		    
-		return -1;
-	
+	if (state == 0xF000){return (pinB ? 1 : 0);}
+	else{return -1;}
 
 }//chk_encoders
 
@@ -150,20 +176,6 @@ uint8_t main()
   spi_init();
   DDRD |= 1<<PD2;
   uint8_t bar_graph = 10;
-  
-	PORTE &= ~(1<<PE6); // parallel load encoder pins
-	_delay_us(100); //need a delay for buffer to change states and PORTA to read the buttons
-	PORTE |= 1<<PE6; // disable parallel load to enable serial shifting
-	_delay_us(100); //need a delay for buffer to change states and PORTA to read the buttons
-
-	SPDR = 0x00; // dummy transmission to start receive
-	while (bit_is_clear(SPSR, SPIF)){} // spin until transmission is complete
-	bar_graph = SPDR;
-	SPDR = bar_graph;
-	while (bit_is_clear(SPSR, SPIF)){} // spin until transmission is complete
-	PORTD |= 1<<PD2;
-	PORTD &= ~(1<<PD2);
-
 
 #endif
 
@@ -174,21 +186,18 @@ uint16_t count = 0; //display count
 DDRB |= 1<<PB4 | 1<<PB5 | 1<<PB6 | 1<<PB7;
 PORTB = 0x00; //init Port B
 
+// bar graph and encoder init
+/*DDRE |= 1<<PE6;
+PORTE |= 1<<PE6;
+spi_init();
+DDRD |= 1<<PD2;
+uint8_t bar_graph = 10;*/
+
 while(1){
 //encoder test code
 #ifdef DEBUG
-	PORTE &= ~(1<<PE6); // parallel load encoder pins
-	_delay_us(100); //need a delay for buffer to change states and PORTA to read the buttons
-	PORTE |= 1<<PE6; // disable parallel load to enable serial shifting
-	_delay_us(100); //need a delay for buffer to change states and PORTA to read the buttons
-
-	SPDR = 0x00; // dummy transmission to start receive
-	while (bit_is_clear(SPSR, SPIF)){} // spin until transmission is complete
-	bar_graph = SPDR;
-	SPDR = bar_graph;
-	while (bit_is_clear(SPSR, SPIF)){} // spin until transmission is complete
-	PORTD |= 1<<PD2;
-	PORTD &= ~(1<<PD2);
+	bar_graph = spi_read();
+	spi_write(bar_graph);
 
 #endif
 
