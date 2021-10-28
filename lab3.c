@@ -151,7 +151,7 @@ uint8_t main()
   DDRD |= 1<<PD2;
   uint8_t bar_graph = 10;
   
-  PORTE &= ~(1<<PE6); // parallel load encoder pins
+	PORTE &= ~(1<<PE6); // parallel load encoder pins
 	_delay_us(100); //need a delay for buffer to change states and PORTA to read the buttons
 	PORTE |= 1<<PE6; // disable parallel load to enable serial shifting
 	_delay_us(100); //need a delay for buffer to change states and PORTA to read the buttons
@@ -177,7 +177,19 @@ PORTB = 0x00; //init Port B
 while(1){
 //encoder test code
 #ifdef DEBUG
-	
+	PORTE &= ~(1<<PE6); // parallel load encoder pins
+	_delay_us(100); //need a delay for buffer to change states and PORTA to read the buttons
+	PORTE |= 1<<PE6; // disable parallel load to enable serial shifting
+	_delay_us(100); //need a delay for buffer to change states and PORTA to read the buttons
+
+	SPDR = 0x00; // dummy transmission to start receive
+	while (bit_is_clear(SPSR, SPIF)){} // spin until transmission is complete
+	bar_graph = SPDR;
+	SPDR = bar_graph;
+	while (bit_is_clear(SPSR, SPIF)){} // spin until transmission is complete
+	PORTD |= 1<<PD2;
+	PORTD &= ~(1<<PD2);
+
 #endif
 
   //make PORTA an input port with pullups 
