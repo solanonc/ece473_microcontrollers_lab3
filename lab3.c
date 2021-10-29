@@ -4,7 +4,7 @@
 
 //#define DEBUG
 //#define DEBUG_ENCODER
-//#define DEBUG_COUNT
+#define DEBUG_COUNT
 
 #define TRUE 1
 #define FALSE 0
@@ -13,6 +13,7 @@
 #define BUTTONS 8
 #include <avr/io.h>
 #include <util/delay.h>
+#include <avr/interrupt.h>
 
 //holds data to be sent to the segments. logic zero turns segment on
 uint8_t segment_data[5] = {0xFF};
@@ -23,6 +24,8 @@ uint8_t dec_to_7seg[12] = {0xC0, 0xF9, 0xA4, 0xB0, 0x99, 0x92,
 
 enum encoder_state{IDLE, STATE01, DETENT, STATE10};  // four states for the encoder. STATE01 and STATE10 are in between IDLE and DETENT states
 
+volatile uint8_t i; //general-purpose counter variable
+volatile uint8_t bar_graph;
 
 
 //******************************************************************************
@@ -92,13 +95,40 @@ return FALSE;
 
 }//chk_buttons
 
+ISR(TIMER0_OVF_vect){
+
+	//make PORTA an input port with pullups 
+	DDRA = 0x00; //inputs
+	PORTA = 0xFF; //pullups enabled
+
+	//enable tristate buffer for pushbutton switches
+	PORTB |= 1<<PB4 | 1<<PB5 | 1<<PB6; //decoder outputs logic low DEC7 to active low tri state buffer
+
+	_delay_us(0.1); //need a delay for buffer to change states and PORTA to read the buttons
+	//now check each button and increment the count as needed
+
+	for (i = 0; i < BUTTONS; i++){
+	      if (chk_buttons(i))
+	      {
+		      bar_graph ^= 1<<i; //toggle the bit on the bar graph that corresponds to the button
+					//ex: LSB of bar graph corresponds to LSB of the buttons
+	      }
+
+	}
+
+	//disable tristate buffer for pushbutton switches
+	PORTB &= ~(1<<PB4); //decoder outputs logic high and disables tri state buffer
+
+
+}
+
 //******************************************************************************
 //                                   segment_sum                                    
 //takes a 16-bit binary input alue and places the appropriate equivalent 4 digit 
 //BCD segment code in the array segment_data for display.                       
 //array is loaded at exit as:  |digit3|digit2|colon|digit1|digit0|
 void segsum(uint16_t sum) {
-  int i; //for loop variable
+  //int i; //for loop variable
   //determine how many digits there are 
   int digits = 0; //stores the number of digits in sum
   uint8_t digit = 0; //stores a digit in sum
@@ -149,6 +179,10 @@ void segsum(uint16_t sum) {
 //***********************************************************************************
 uint8_t main()
 {
+//timer counter 0 setup, running off i/o clock
+TIMSK |= (1<<TOIE0);             //enable interrupts
+TCCR0 |= (1<<CS02) | (1<<CS00);  //normal mode, prescale by 128
+
 //encoder test code
 #ifdef DEBUG
   DDRE |= 1<<PE6;
@@ -161,7 +195,7 @@ uint8_t main()
 
 uint8_t i; //for loop variable
 uint16_t display_count = 0; //display count
-uint8_t bar_graph = 0; //bar graph display
+//uint8_t bar_graph = 0; //bar graph display
 
 //encoder variables
 enum encoder_state encoder = IDLE; //init encoder state
@@ -179,6 +213,8 @@ PORTE |= 1<<PE6;
 spi_init();
 DDRD |= 1<<PD2;
 
+sei(); //enable global interrupt flag
+
 while(1){
 //encoder test code
 #ifdef DEBUG
@@ -187,30 +223,7 @@ while(1){
 
 #endif
 
-  //make PORTA an input port with pullups 
-  DDRA = 0x00; //inputs
-  PORTA = 0xFF; //pullups enabled
-
-  //enable tristate buffer for pushbutton switches
-  PORTB |= 1<<PB4 | 1<<PB5 | 1<<PB6; //decoder outputs logic low DEC7 to active low tri state buffer
-
-  _delay_us(0.1); //need a delay for buffer to change states and PORTA to read the buttons
-  //now check each button and increment the count as needed
- 
-  #ifdef BUTTONS 
-  for (i = 0; i < BUTTONS; i++){
-  	if (chk_buttons(i))
-  	{
-		display_count += 1<<i; //shifting is equivalent to 2^(# of shifts)
-
-  	}
-
-  }
-  #endif
-
- //disable tristate buffer for pushbutton switches
-  PORTB &= ~(1<<PB4); //decoder outputs logic high and disables tri state buffer
-
+  
   encoder_data = spi_read(); //read encoder pins from spi
   pinA = ((encoder_data & 0x01) == 0) ? 0 : 1; //sample pinA
   pinB = ((encoder_data & 0x02) == 0) ? 0 : 1; //sample pinB
