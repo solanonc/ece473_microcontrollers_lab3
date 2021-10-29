@@ -25,7 +25,7 @@ enum encoder_state{IDLE, STATE01, DETENT, STATE10};  // four states for the enco
 volatile uint8_t i; //general-purpose counter variable
 volatile uint8_t mode; //user interface
 volatile uint8_t sum; //this will be used to either increment by 0, 1, 2 or 4
-volatile uint16_t display_count = 0; //display count
+volatile int16_t display_count = 0; //display count
 volatile uint8_t save_portA;
 volatile uint8_t save_portB;
 
@@ -393,8 +393,8 @@ while(1){
   spi_write(mode); //display the mode selected to the user
 
   //bound the count to 0 - 1023
-  if (display_count < 0){display_count = 0;}
-  else if (display_count > 1023){display_count = 0;} 
+  if (display_count < 0){display_count += 1024;}
+  else if (display_count > 1023){display_count -= 1024;} 
 
   //break up the disp_value to 4, BCD digits in the array: call (segsum)
   segsum(display_count);
