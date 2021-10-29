@@ -3,7 +3,8 @@
 // 10.27.21
 
 //#define DEBUG
-#define DEBUG_ENCODER
+//#define DEBUG_ENCODER
+//#define DEBUG_COUNT
 
 #define TRUE 1
 #define FALSE 0
@@ -35,7 +36,7 @@ void spi_init(void){
   SPCR |= (1<<SPE | 1<<MSTR); //master mode, clk low on idle, leading edge sample
   SPSR |= 1<<SPI2X; //choose double speed operation
 
- }//spi_init
+}//spi_init
 
 //******************************************************************************
 //				spi_read
@@ -55,7 +56,7 @@ uint8_t spi_read(void){
 	return SPDR;
 
 
- }//spi_read
+}//spi_read
 
 //******************************************************************************
 //				spi_write
@@ -70,30 +71,6 @@ void spi_write(uint8_t data){
 	PORTD &= ~(1<<PD2);
 	
 }//spi_write
-
-
-//******************************************************************************
-//			      chk_encoders
-//Check the state of the encoder.
-//Adapted from Ganssel's "Guide to Debouncing"            
-
-
-int8_t chk_encoders(uint8_t encoder){
-
-	static uint16_t state = {0}; //tracks state of the encoder
-	uint8_t pinA, pinB; //encoder pins
-
-	//check for assertion (active low)
-	pinA = ((encoder & 1) == 0) ? 0 : 1; 
-	pinB = ((encoder & 2) == 0) ? 0 : 1; 
-
-	//update encoder state
-	state = (state << 1) | pinA | 0xE000;
-
-	if (state == 0xF000){return (pinB ? 1 : 0);}
-	else{return -1;}
-
-}//chk_encoders
 
 //******************************************************************************
 //                            chk_buttons                                      
@@ -184,25 +161,23 @@ uint8_t main()
 
 uint8_t i; //for loop variable
 uint16_t display_count = 0; //display count
+uint8_t bar_graph = 0; //bar graph display
 
 //encoder variables
+enum encoder_state encoder = IDLE; //init encoder state
+int8_t encoder_count = 0; //counter to track the encoder state machine
 uint8_t pinA = 1, pinB = 1, oldPinA = 1, oldPinB = 1; //hold pin values for the encoder
 uint8_t encoder_data = 0xFF; //data being read from the encoder pins
-int8_t encoder_count = 0; //counter to track the encoder state machine
 
 //set port B bits 4-7 as outputs
-//DDRB |= 1<<PB4 | 1<<PB5 | 1<<PB6 | 1<<PB7;
-//PORTB = 0x00; //init Port B
+DDRB |= 1<<PB4 | 1<<PB5 | 1<<PB6 | 1<<PB7;
+PORTB &= ~(0xF0); //init Port B
 
 // bar graph and encoder init
 DDRE |= 1<<PE6;
 PORTE |= 1<<PE6;
 spi_init();
 DDRD |= 1<<PD2;
-
-uint8_t bar_graph = 0;
-int8_t bar_count = 0;
-enum encoder_state encoder = IDLE; //init encoder state
 
 while(1){
 //encoder test code
@@ -221,7 +196,8 @@ while(1){
 
   _delay_us(0.1); //need a delay for buffer to change states and PORTA to read the buttons
   //now check each button and increment the count as needed
-  
+ 
+  #ifdef BUTTONS 
   for (i = 0; i < BUTTONS; i++){
   	if (chk_buttons(i))
   	{
@@ -230,6 +206,7 @@ while(1){
   	}
 
   }
+  #endif
 
  //disable tristate buffer for pushbutton switches
   PORTB &= ~(1<<PB4); //decoder outputs logic high and disables tri state buffer
@@ -247,10 +224,10 @@ while(1){
 		#endif
 		//check if encoder has gone through all states of the state machine
 		if (encoder_count == 3){
-			bar_count++;
+			display_count++;
 		}
 		else if (encoder_count == -3){
-			bar_count--;
+			display_count--;
 		}
 		encoder_count = 0;
 		if ((pinA != oldPinA) || (pinB != oldPinB)){ //if movement detected
@@ -327,8 +304,8 @@ while(1){
   }
   oldPinA = pinA;
   oldPinB = pinB;
-  #ifdef DEBUG_ENCODER
-	  spi_write(bar_count);
+  #ifdef DEBUG_COUNT
+	  spi_write(bar_graph);
 
   #endif
 
@@ -343,14 +320,14 @@ while(1){
   DDRA = 0xFF;
 
   //bound a counter (0-4) to keep track of digit to display 
-  //PORTB = 0x00; //first digit
+  PORTB &= ~(0xF0); //first digit
   for (i = 0; i < SEGNUMS+1; i++)
   {
 	PORTA = segment_data[i]; //send 7 segment code to LED segments
 	_delay_ms(1);
 
 	//send PORTB the next digit to display
-	//PORTB += 0x10;
+	PORTB += 0x10;
 
   }
      
