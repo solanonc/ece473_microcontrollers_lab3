@@ -23,8 +23,11 @@ uint8_t dec_to_7seg[12] = {0xC0, 0xF9, 0xA4, 0xB0, 0x99, 0x92,
 enum encoder_state{IDLE, STATE01, DETENT, STATE10};  // four states for the encoder. STATE01 and STATE10 are in between IDLE and DETENT states
 
 volatile uint8_t i; //general-purpose counter variable
-volatile uint8_t bar_graph; //user interface
+volatile uint8_t mode; //user interface
+volatile uint8_t sum; //this will be used to either increment by 0, 1, 2 or 4
 volatile uint16_t display_count = 0; //display count
+volatile uint8_t save_portA;
+volatile uint8_t save_portB;
 
 //encoder variables
 volatile uint8_t encoder_data = 0xFF; //data being read from the encoder pins
@@ -108,6 +111,9 @@ return FALSE;
 
 ISR(TIMER0_OVF_vect){
 
+	save_portA = PORTA;	
+	save_portB = PORTB;
+
 	//make PORTA an input port with pullups 
 	DDRA = 0x00; //inputs
 	PORTA = 0xFF; //pullups enabled
@@ -118,36 +124,44 @@ ISR(TIMER0_OVF_vect){
 	_delay_us(0.1); //need a delay for buffer to change states and PORTA to read the buttons
 	//now check each button and increment the count as needed
 
-	for (i = 0; i < BUTTONS; i++){
-	      if (chk_buttons(i))
-	      {
-		      bar_graph ^= 1<<i; //toggle the bit on the bar graph that corresponds to the button
-					//ex: LSB of bar graph corresponds to LSB of the buttons
-	      }
+        if (chk_buttons(0)){mode ^= 1<<2;} //toggle the bit on the bar graph that corresponds to the button
+        if (chk_buttons(1)){mode ^= 1<<5;} //toggle the bit on the bar graph that corresponds to the button
+	
+	//disable tristate buffer for pushbutton switches
+//	PORTB &= ~(1<<PB4); //decoder outputs logic high and disables tri state buffer
+
+	switch (mode){
+		case 0x04:
+			sum = 2;
+			break;
+
+		case 0x20:
+			sum = 4;
+			break;			
+
+		case 0x24:
+			sum = 0;	
+			break;
+
+		default:
+			sum = 1;
 
 	}
-
-	//disable tristate buffer for pushbutton switches
-	PORTB &= ~(1<<PB4); //decoder outputs logic high and disables tri state buffer
 
 	encoder_data = spi_read(); //read encoder pins from spi
 
 	pinA1 = ((encoder_data & 0x01) == 0) ? 0 : 1; //sample pinA1
 	pinB1 = ((encoder_data & 0x02) == 0) ? 0 : 1; //sample pinB1
 
-	//encoder state machine
+	//encoder1 state machine
 	switch (encoder1){
 		case IDLE:
-		      #ifdef DEBUG_ENCODER
-			      bar_graph = 0x01;
-
-		      #endif
 		      //check if encoder1 has gone through all states of the state machine
 		      if (encoder1_count == 3){
-			      display_count++;
+			      display_count += sum;
 		      }
 		      else if (encoder1_count == -3){
-			      display_count--;
+			      display_count -= sum;
 		      }
 		      encoder1_count = 0;
 		      if ((pinA1 != oldPinA1) || (pinB1 != oldPinB1)){ //if movement detected
@@ -167,10 +181,6 @@ ISR(TIMER0_OVF_vect){
 		      break;
 
 		case STATE01:
-		      #ifdef DEBUG_ENCODER
-			      bar_graph = 0x02;
-
-		      #endif
 		      if ((pinA1 == 0) && (pinB1 == 0)){ //CW movement
 			      if (oldPinB1 == 1){
 				      encoder1 = DETENT;
@@ -185,10 +195,6 @@ ISR(TIMER0_OVF_vect){
 		      break;
 
 		case DETENT:
-		      #ifdef DEBUG_ENCODER
-			      bar_graph = 0x03;
-
-		      #endif
 		      if ((pinA1 == 1) && (pinB1 == 0)){ //CW movement
 			      if (oldPinA1 == 0){
 				      encoder1 = STATE10;
@@ -204,10 +210,6 @@ ISR(TIMER0_OVF_vect){
 		      break;
 
 		case STATE10:
-		      #ifdef DEBUG_ENCODER
-			      bar_graph = 0x04;
-
-		      #endif
 		      if ((pinA1 == 1) && (pinB1 == 1)){ //CW movement
 			      if (oldPinB1 == 0){
 				      encoder1 = IDLE;
@@ -231,16 +233,12 @@ ISR(TIMER0_OVF_vect){
 	//encoder state machine
 	switch (encoder2){
 		case IDLE:
-		      #ifdef DEBUG_ENCODER
-			      bar_graph = 0x01;
-
-		      #endif
 		      //check if encoder2 has gone through all states of the state machine
 		      if (encoder2_count == 3){
-			      display_count++;
+			      display_count += sum;
 		      }
 		      else if (encoder2_count == -3){
-			      display_count--;
+			      display_count -= sum;
 		      }
 		      encoder2_count = 0;
 		      if ((pinA2 != oldPinA2) || (pinB2 != oldPinB2)){ //if movement detected
@@ -260,10 +258,6 @@ ISR(TIMER0_OVF_vect){
 		      break;
 
 		case STATE01:
-		      #ifdef DEBUG_ENCODER
-			      bar_graph = 0x02;
-
-		      #endif
 		      if ((pinA2 == 0) && (pinB2 == 0)){ //CW movement
 			      if (oldPinB2 == 1){
 				      encoder2 = DETENT;
@@ -278,10 +272,6 @@ ISR(TIMER0_OVF_vect){
 		      break;
 
 		case DETENT:
-		      #ifdef DEBUG_ENCODER
-			      bar_graph = 0x03;
-
-		      #endif
 		      if ((pinA2 == 1) && (pinB2 == 0)){ //CW movement
 			      if (oldPinA2 == 0){
 				      encoder2 = STATE10;
@@ -297,10 +287,6 @@ ISR(TIMER0_OVF_vect){
 		      break;
 
 		case STATE10:
-		      #ifdef DEBUG_ENCODER
-			      bar_graph = 0x04;
-
-		      #endif
 		      if ((pinA2 == 1) && (pinB2 == 1)){ //CW movement
 			      if (oldPinB2 == 0){
 				      encoder2 = IDLE;
@@ -318,6 +304,11 @@ ISR(TIMER0_OVF_vect){
 	oldPinA2 = pinA2;
 	oldPinB2 = pinB2;
 
+	DDRA = 0xFF; //make PORTA an output port
+
+	//restore the states of PORTA and PORTB
+	PORTA = save_portA;
+	PORTB = save_portB;
 
 }//end ISR
 
@@ -378,9 +369,8 @@ void segsum(uint16_t sum) {
 //***********************************************************************************
 uint8_t main()
 {
-//timer counter 0 setup, running off i/o clock
-TIMSK |= (1<<TOIE0);             //enable interrupts
-TCCR0 |= (1<<CS02) | (1<<CS00);  //normal mode, prescale by 128
+//set port A at outputs
+DDRA = 0xFF;
 
 //set port B bits 4-7 as outputs
 DDRB |= 1<<PB4 | 1<<PB5 | 1<<PB6 | 1<<PB7;
@@ -392,13 +382,15 @@ PORTE |= 1<<PE6;
 spi_init();
 DDRD |= 1<<PD2;
 
+//timer counter 0 setup, running off i/o clock
+TIMSK |= (1<<TOIE0);             //enable interrupts
+TCCR0 |= (1<<CS02) | (1<<CS00);  //normal mode, prescale by 128
+
 sei(); //enable global interrupt flag
 
 while(1){
-  #ifdef DEBUG
-	  spi_write(bar_graph);
 
-  #endif
+  spi_write(mode); //display the mode selected to the user
 
   //bound the count to 0 - 1023
   if (display_count < 0){display_count = 0;}
@@ -407,15 +399,12 @@ while(1){
   //break up the disp_value to 4, BCD digits in the array: call (segsum)
   segsum(display_count);
 
-  //make PORTA an output
-  DDRA = 0xFF;
-
   //bound a counter (0-4) to keep track of digit to display 
   PORTB &= ~(0xF0); //first digit
   for (i = 0; i < SEGNUMS+1; i++)
   {
 	PORTA = segment_data[i]; //send 7 segment code to LED segments
-	_delay_ms(1);
+	_delay_ms(2);
 
 	//send PORTB the next digit to display
 	PORTB += 0x10;
