@@ -2,9 +2,7 @@
 // Cruz M. Solano-Nieblas
 // 10.27.21
 
-//#define DEBUG
-//#define DEBUG_ENCODER
-#define DEBUG_COUNT
+#define DEBUG
 
 #define TRUE 1
 #define FALSE 0
@@ -25,8 +23,21 @@ uint8_t dec_to_7seg[12] = {0xC0, 0xF9, 0xA4, 0xB0, 0x99, 0x92,
 enum encoder_state{IDLE, STATE01, DETENT, STATE10};  // four states for the encoder. STATE01 and STATE10 are in between IDLE and DETENT states
 
 volatile uint8_t i; //general-purpose counter variable
-volatile uint8_t bar_graph;
+volatile uint8_t bar_graph; //user interface
+volatile uint16_t display_count = 0; //display count
 
+//encoder variables
+volatile uint8_t encoder_data = 0xFF; //data being read from the encoder pins
+
+//encoder 1
+volatile enum encoder_state encoder1 = IDLE; //init encoder1 state
+volatile int8_t encoder1_count = 0; //counter to track the encoder1 state machine
+volatile uint8_t pinA1 = 1, pinB1 = 1, oldPinA1 = 1, oldPinB1 = 1; //hold pin values for encoder1
+
+//encoder 2
+volatile enum encoder_state encoder2 = IDLE; //init encoder2 state
+volatile int8_t encoder2_count = 0; //counter to track the encoder2 state machine
+volatile uint8_t pinA2 = 1, pinB2 = 1, oldPinA2 = 1, oldPinB2 = 1; //hold pin values for encoder2
 
 //******************************************************************************
 //				spi_init
@@ -119,8 +130,196 @@ ISR(TIMER0_OVF_vect){
 	//disable tristate buffer for pushbutton switches
 	PORTB &= ~(1<<PB4); //decoder outputs logic high and disables tri state buffer
 
+	encoder_data = spi_read(); //read encoder pins from spi
 
-}
+	pinA1 = ((encoder_data & 0x01) == 0) ? 0 : 1; //sample pinA1
+	pinB1 = ((encoder_data & 0x02) == 0) ? 0 : 1; //sample pinB1
+
+	//encoder state machine
+	switch (encoder1){
+		case IDLE:
+		      #ifdef DEBUG_ENCODER
+			      bar_graph = 0x01;
+
+		      #endif
+		      //check if encoder1 has gone through all states of the state machine
+		      if (encoder1_count == 3){
+			      display_count++;
+		      }
+		      else if (encoder1_count == -3){
+			      display_count--;
+		      }
+		      encoder1_count = 0;
+		      if ((pinA1 != oldPinA1) || (pinB1 != oldPinB1)){ //if movement detected
+			      if ((pinA1 == 0) && (pinB1 == 1)){ //CW movement
+				      if (oldPinA1 == 1){
+					      encoder1 = STATE01;
+					      encoder1_count++;
+				      }
+			      }
+			      else if ((pinA1 == 1) && (pinB1 == 0)){ //CCW movement
+				      if (oldPinB1 == 1){
+					      encoder1 = STATE10;
+					      encoder1_count--;
+				      }
+			      }
+		      }
+		      break;
+
+		case STATE01:
+		      #ifdef DEBUG_ENCODER
+			      bar_graph = 0x02;
+
+		      #endif
+		      if ((pinA1 == 0) && (pinB1 == 0)){ //CW movement
+			      if (oldPinB1 == 1){
+				      encoder1 = DETENT;
+				      encoder1_count++;
+			      }
+		      }
+		      else if ((pinA1 == 1) && (pinB1 == 1)){ //CCW movement
+			      if (oldPinA1 == 0){
+				      encoder1 = IDLE;
+			      }
+		      }
+		      break;
+
+		case DETENT:
+		      #ifdef DEBUG_ENCODER
+			      bar_graph = 0x03;
+
+		      #endif
+		      if ((pinA1 == 1) && (pinB1 == 0)){ //CW movement
+			      if (oldPinA1 == 0){
+				      encoder1 = STATE10;
+				      encoder1_count++;
+			      }
+		      }
+		      else if ((pinA1 == 0) && (pinB1 == 1)){ //CCW movement
+			      if (oldPinB1 == 0){
+				      encoder1 = STATE01;
+				      encoder1_count--;
+			      }
+		      }
+		      break;
+
+		case STATE10:
+		      #ifdef DEBUG_ENCODER
+			      bar_graph = 0x04;
+
+		      #endif
+		      if ((pinA1 == 1) && (pinB1 == 1)){ //CW movement
+			      if (oldPinB1 == 0){
+				      encoder1 = IDLE;
+			      }
+		      }
+		      else if ((pinA1 == 0) && (pinB1 == 0)){ //CCW movement
+			      if (oldPinA1 == 1){
+				      encoder1 = DETENT;
+				      encoder1_count--;
+			      }
+		      }
+		      break;
+
+	}//end switch
+	oldPinA1 = pinA1;
+	oldPinB1 = pinB1;
+
+	pinA2 = ((encoder_data & 0x04) == 0) ? 0 : 1; //sample pinA2
+	pinB2 = ((encoder_data & 0x08) == 0) ? 0 : 1; //sample pinB2
+
+	//encoder state machine
+	switch (encoder2){
+		case IDLE:
+		      #ifdef DEBUG_ENCODER
+			      bar_graph = 0x01;
+
+		      #endif
+		      //check if encoder2 has gone through all states of the state machine
+		      if (encoder2_count == 3){
+			      display_count++;
+		      }
+		      else if (encoder2_count == -3){
+			      display_count--;
+		      }
+		      encoder2_count = 0;
+		      if ((pinA2 != oldPinA2) || (pinB2 != oldPinB2)){ //if movement detected
+			      if ((pinA2 == 0) && (pinB2 == 1)){ //CW movement
+				      if (oldPinA2 == 1){
+					      encoder2 = STATE01;
+					      encoder2_count++;
+				      }
+			      }
+			      else if ((pinA2 == 1) && (pinB2 == 0)){ //CCW movement
+				      if (oldPinB2 == 1){
+					      encoder2 = STATE10;
+					      encoder2_count--;
+				      }
+			      }
+		      }
+		      break;
+
+		case STATE01:
+		      #ifdef DEBUG_ENCODER
+			      bar_graph = 0x02;
+
+		      #endif
+		      if ((pinA2 == 0) && (pinB2 == 0)){ //CW movement
+			      if (oldPinB2 == 1){
+				      encoder2 = DETENT;
+				      encoder2_count++;
+			      }
+		      }
+		      else if ((pinA2 == 1) && (pinB2 == 1)){ //CCW movement
+			      if (oldPinA2 == 0){
+				      encoder2 = IDLE;
+			      }
+		      }
+		      break;
+
+		case DETENT:
+		      #ifdef DEBUG_ENCODER
+			      bar_graph = 0x03;
+
+		      #endif
+		      if ((pinA2 == 1) && (pinB2 == 0)){ //CW movement
+			      if (oldPinA2 == 0){
+				      encoder2 = STATE10;
+				      encoder2_count++;
+			      }
+		      }
+		      else if ((pinA2 == 0) && (pinB2 == 1)){ //CCW movement
+			      if (oldPinB2 == 0){
+				      encoder2 = STATE01;
+				      encoder2_count--;
+			      }
+		      }
+		      break;
+
+		case STATE10:
+		      #ifdef DEBUG_ENCODER
+			      bar_graph = 0x04;
+
+		      #endif
+		      if ((pinA2 == 1) && (pinB2 == 1)){ //CW movement
+			      if (oldPinB2 == 0){
+				      encoder2 = IDLE;
+			      }
+		      }
+		      else if ((pinA2 == 0) && (pinB2 == 0)){ //CCW movement
+			      if (oldPinA2 == 1){
+				      encoder2 = DETENT;
+				      encoder2_count--;
+			      }
+		      }
+		      break;
+
+	}//end switch
+	oldPinA2 = pinA2;
+	oldPinB2 = pinB2;
+
+
+}//end ISR
 
 //******************************************************************************
 //                                   segment_sum                                    
@@ -183,26 +382,6 @@ uint8_t main()
 TIMSK |= (1<<TOIE0);             //enable interrupts
 TCCR0 |= (1<<CS02) | (1<<CS00);  //normal mode, prescale by 128
 
-//encoder test code
-#ifdef DEBUG
-  DDRE |= 1<<PE6;
-  PORTE |= 1<<PE6;
-  spi_init();
-  DDRD |= 1<<PD2;
-  uint8_t bar_graph = 0;
-
-#endif
-
-uint8_t i; //for loop variable
-uint16_t display_count = 0; //display count
-//uint8_t bar_graph = 0; //bar graph display
-
-//encoder variables
-enum encoder_state encoder = IDLE; //init encoder state
-int8_t encoder_count = 0; //counter to track the encoder state machine
-uint8_t pinA = 1, pinB = 1, oldPinA = 1, oldPinB = 1; //hold pin values for the encoder
-uint8_t encoder_data = 0xFF; //data being read from the encoder pins
-
 //set port B bits 4-7 as outputs
 DDRB |= 1<<PB4 | 1<<PB5 | 1<<PB6 | 1<<PB7;
 PORTB &= ~(0xF0); //init Port B
@@ -216,108 +395,7 @@ DDRD |= 1<<PD2;
 sei(); //enable global interrupt flag
 
 while(1){
-//encoder test code
-#ifdef DEBUG
-	bar_graph = spi_read();
-	spi_write(bar_graph);
-
-#endif
-
-  
-  encoder_data = spi_read(); //read encoder pins from spi
-  pinA = ((encoder_data & 0x01) == 0) ? 0 : 1; //sample pinA
-  pinB = ((encoder_data & 0x02) == 0) ? 0 : 1; //sample pinB
-
-  //encoder state machine
-  switch (encoder){
-	  case IDLE:
-		#ifdef DEBUG_ENCODER
-			bar_graph = 0x01;
-
-		#endif
-		//check if encoder has gone through all states of the state machine
-		if (encoder_count == 3){
-			display_count++;
-		}
-		else if (encoder_count == -3){
-			display_count--;
-		}
-		encoder_count = 0;
-		if ((pinA != oldPinA) || (pinB != oldPinB)){ //if movement detected
-			if ((pinA == 0) && (pinB == 1)){ //CW movement
-				if (oldPinA == 1){
-					encoder = STATE01;
-					encoder_count++;
-				}
-			}
-			else if ((pinA == 1) && (pinB == 0)){ //CCW movement
-				if (oldPinB == 1){
-					encoder = STATE10;
-					encoder_count--;
-				}
-			}
-		}
-		break;
-
-	  case STATE01:
-		#ifdef DEBUG_ENCODER
-			bar_graph = 0x02;
-
-		#endif
-		if ((pinA == 0) && (pinB == 0)){ //CW movement
-			if (oldPinB == 1){
-				encoder = DETENT;
-				encoder_count++;
-			}
-		}
-		else if ((pinA == 1) && (pinB == 1)){ //CCW movement
-			if (oldPinA == 0){
-				encoder = IDLE;
-			}
-		}
-		break;
-
-	  case DETENT:
-		#ifdef DEBUG_ENCODER
-			bar_graph = 0x03;
-
-		#endif
-		if ((pinA == 1) && (pinB == 0)){ //CW movement
-			if (oldPinA == 0){
-				encoder = STATE10;
-				encoder_count++;
-			}
-		}
-		else if ((pinA == 0) && (pinB == 1)){ //CCW movement
-			if (oldPinB == 0){
-				encoder = STATE01;
-				encoder_count--;
-			}
-	  	}
-		break;
-
-	  case STATE10:
-		#ifdef DEBUG_ENCODER
-			bar_graph = 0x04;
-
-		#endif
-		if ((pinA == 1) && (pinB == 1)){ //CW movement
-			if (oldPinB == 0){
-				encoder = IDLE;
-			}
-		}
-		else if ((pinA == 0) && (pinB == 0)){ //CCW movement
-			if (oldPinA == 1){
-				encoder = DETENT;
-				encoder_count--;
-			}
-		}
-		break;
-
-  }
-  oldPinA = pinA;
-  oldPinB = pinB;
-  #ifdef DEBUG_COUNT
+  #ifdef DEBUG
 	  spi_write(bar_graph);
 
   #endif
